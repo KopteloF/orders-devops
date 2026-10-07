@@ -31,6 +31,10 @@ Django REST Framework: прайсы поставщиков (YAML), корзин�
 3. build и push образа в GHCR
 4. на `master`: deploy с self-hosted runner через `helm upgrade --install`, ожидание `rollout status`
 
+Deploy запускается только при переменной репозитория `DEPLOY_ENABLED=true` (Settings → Secrets and variables → Actions → Variables). Стенд поднимается по необходимости, поэтому без кластера CI остаётся зелёным, а не висит в очереди.
+
+Runner регистрируется на control-ноде с доступом к k3s: `deploy/register_runner.yml` (токен из Settings → Actions → Runners → New self-hosted runner).
+
 Зеркало lint/test/build: `.gitlab-ci.yml`.
 
 ## Kubernetes и Helm

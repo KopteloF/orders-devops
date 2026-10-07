@@ -63,7 +63,7 @@ jobs:
   deploy:
     runs-on: [self-hosted, k3s]
     needs: [build]
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/master' && vars.DEPLOY_ENABLED == 'true'
     env:
       KUBECONFIG: /home/controlnode/.kube/config
     steps:

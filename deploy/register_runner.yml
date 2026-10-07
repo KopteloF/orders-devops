@@ -1,0 +1,92 @@
+---
+# Регистрация self-hosted GitHub Actions runner на control-ноде с доступом к k3s.
+# Job `deploy` в CI ждёт runner с метками [self-hosted, k3s].
+#
+# Токен одноразовый, живёт ~1 час: Settings → Actions → Runners → New self-hosted runner.
+#
+#   ansible-playbook -i <inventory> register_runner.yml -e runner_token=<TOKEN>
+#
+# Если на хосте уже зарегистрирован runner (например, от другого репозитория):
+#   ... -e runner_token=<TOKEN> -e runner_reset=true
+- name: Register GitHub Actions runner
+  hosts: runner
+  become: true
+  vars:
+    runner_version: "2.338.0"
+    runner_url: https://github.com/KopteloF/orders-devops
+    runner_labels: k3s
+    runner_name: "{{ inventory_hostname }}-k3s"
+    runner_user: "{{ ansible_user }}"
+    runner_dir: /opt/actions-runner
+    runner_reset: false
+  tasks:
+    - name: Check token is passed
+      fail:
+        msg: "Передай токен: -e runner_token=<TOKEN>"
+      when: runner_token is not defined or runner_token | length == 0
+
+    - name: Remove previous registration
+      when: runner_reset | bool
+      block:
+        - name: Stop and uninstall runner service
+          shell: ./svc.sh stop; ./svc.sh uninstall
+          args:
+            chdir: "{{ runner_dir }}"
+            removes: "{{ runner_dir }}/.service"
+
+        - name: Drop local runner credentials
+          file:
+            path: "{{ runner_dir }}/{{ item }}"
+            state: absent
+          loop: [.runner, .credentials, .credentials_rsaparams]
+
+    - name: Create runner directory
+      file:
+        path: "{{ runner_dir }}"
+        state: directory
+        owner: "{{ runner_user }}"
+        mode: "0755"
+
+    - name: Download and unpack runner
+      unarchive:
+        src: "https://github.com/actions/runner/releases/download/v{{ runner_version }}/actions-runner-linux-x64-{{ runner_version }}.tar.gz"
+        dest: "{{ runner_dir }}"
+        remote_src: true
+        owner: "{{ runner_user }}"
+        creates: "{{ runner_dir }}/config.sh"
+
+    - name: Configure runner
+      become_user: "{{ runner_user }}"
+      command: >
+        ./config.sh --unattended --replace
+        --url {{ runner_url }}
+        --token {{ runner_token }}
+        --name {{ runner_name }}
+        --labels {{ runner_labels }}
+      args:
+        chdir: "{{ runner_dir }}"
+        creates: "{{ runner_dir }}/.runner"
+      no_log: true
+
+    - name: Install runner as systemd service
+      command: ./svc.sh install {{ runner_user }}
+      args:
+        chdir: "{{ runner_dir }}"
+        creates: "{{ runner_dir }}/.service"
+
+    - name: Start runner service
+      command: ./svc.sh start
+      args:
+        chdir: "{{ runner_dir }}"
+      changed_when: false
+
+    - name: Runner status
+      command: ./svc.sh status
+      args:
+        chdir: "{{ runner_dir }}"
+      register: runner_status
+      changed_when: false
+
+    - name: Итог
+      debug:
+        msg: "{{ runner_status.stdout_lines | select('search', 'Active:') | list }}"
